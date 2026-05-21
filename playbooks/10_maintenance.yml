@@ -14,6 +14,8 @@
   become: true
   gather_facts: true
   serial: 5  # Actualizar de 5 en 5 para no saturar la red
+  vars_files:
+    - ../inventory/group_vars/all.yml
 
   vars:
     mantenimiento_log: "/var/log/ansible-mantenimiento.log"

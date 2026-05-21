@@ -9,6 +9,8 @@
   hosts: clientes
   become: true
   gather_facts: true
+  vars_files:
+    - ../inventory/group_vars/all.yml
 
   vars:
     # Lista de impresoras del centro - ajustar según infraestructura real

@@ -9,6 +9,8 @@
   hosts: "{{ aula | default('alumnos') }}"
   become: true
   gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all.yml
 
   vars:
     activar: true   # true = activar modo examen, false = restaurar

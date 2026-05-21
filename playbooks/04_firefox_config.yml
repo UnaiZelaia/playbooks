@@ -11,6 +11,8 @@
   hosts: clientes
   become: true
   gather_facts: true
+  vars_files:
+    - ../inventory/group_vars/all.yml
 
   vars:
     firefox_policies_dir: "/usr/lib/firefox/distribution"

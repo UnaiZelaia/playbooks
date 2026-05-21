@@ -10,6 +10,8 @@
   hosts: clientes
   become: true
   gather_facts: true
+  vars_files:
+    - ../inventory/group_vars/all.yml
 
   vars:
     glpi_agent_deb: "glpi-agent_{{ glpi_agent.version }}_all.deb"
