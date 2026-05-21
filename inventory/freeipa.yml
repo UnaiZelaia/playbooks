@@ -1,0 +1,7 @@
+plugin: freeipa.ansible_freeipa.ipahost
+
+ipa_host: freeipa.arriagakoharitza.net
+validate_certs: false
+
+username: ansible_admin
+password: "12345678"
