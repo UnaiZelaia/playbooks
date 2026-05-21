@@ -28,11 +28,6 @@
       register: apt_upgrade
       notify: reiniciar_si_kernel
 
-    # ---- Zona horaria ----
-    - name: "Configurar zona horaria"
-      timezone:
-        name: "{{ timezone }}"
-
     # ---- Locale ----
     - name: "Instalar soporte de locales"
       apt:
