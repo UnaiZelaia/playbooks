@@ -1,6 +1,6 @@
-plugin: freeipa.ansible_freeipa.ipahost
+plugin: freeipa.ansible_freeipa
 
-ipa_host: freeipa.arriagakoharitza.net
+ipa_host: ipa.arriagakoharitza.net
 validate_certs: false
 
 username: ansible_admin
