@@ -1,0 +1,85 @@
+---
+# =============================================================
+# PLAYBOOK 09 · Montaje de recursos de red (NFS)
+# - Instala cliente NFS
+# - Monta carpetas compartidas según perfil
+# - Configura /etc/fstab para montaje automático
+# - Crea puntos de montaje
+# =============================================================
+- name: "Montaje de recursos de red NFS"
+  hosts: clientes
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # ---- Instalar cliente NFS ----
+    - name: "Instalar paquetes NFS cliente"
+      apt:
+        name:
+          - nfs-common
+          - autofs
+        state: present
+
+    # ---- Crear puntos de montaje ----
+    - name: "Crear directorio base para recursos"
+      file:
+        path: /mnt/recursos
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: "Crear puntos de montaje para shares del perfil"
+      file:
+        path: "{{ item.destino }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop: "{{ shares_nfs | default([]) }}"
+      loop_control:
+        label: "{{ item.nombre }}"
+
+    # ---- Añadir entradas en /etc/fstab ----
+    - name: "Configurar montaje NFS en fstab"
+      mount:
+        path: "{{ item.destino }}"
+        src: "{{ item.origen }}"
+        fstype: nfs
+        opts: "{{ item.opciones | default('rw,soft,intr,timeo=30,retrans=3') }},_netdev"
+        state: mounted
+      loop: "{{ shares_nfs | default([]) }}"
+      loop_control:
+        label: "{{ item.nombre }}"
+      ignore_errors: true
+
+    # ---- autofs para carpetas personales (home automount) ----
+    - name: "Configurar autofs para home de usuarios IPA (opcional)"
+      copy:
+        dest: /etc/auto.master.d/home.autofs
+        content: |
+          # Montaje automático de homedirs de IPA (si se usa NFS home)
+          # Descomentar si se centraliza el /home en el servidor
+          # /home /etc/auto.home --timeout=300
+        owner: root
+        group: root
+        mode: '0644'
+
+    # ---- Verificar montajes ----
+    - name: "Verificar que los montajes están activos"
+      command: df -h "{{ item.destino }}"
+      register: df_result
+      changed_when: false
+      failed_when: false
+      loop: "{{ shares_nfs | default([]) }}"
+      loop_control:
+        label: "{{ item.nombre }}"
+
+    - name: "Mostrar estado de montajes"
+      debug:
+        msg: "{{ item.stdout }}"
+      loop: "{{ df_result.results }}"
+      loop_control:
+        label: "Montaje {{ item.item.nombre }}"
+      when: item.stdout is defined

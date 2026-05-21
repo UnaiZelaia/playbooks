@@ -1,0 +1,155 @@
+---
+# =============================================================
+# PLAYBOOK 02 · Inscripción en dominio FreeIPA
+# - Instala ipa-client
+# - Realiza el enroll contra el servidor IPA
+# - Configura SSSD para login con cuentas de dominio
+# - Configura PAM para crear homedir automáticamente
+# - Configura sudo con reglas de IPA
+# =============================================================
+- name: "Inscripción en dominio FreeIPA"
+  hosts: clientes
+  become: true
+  gather_facts: true
+
+  vars:
+    # Credenciales de enrollment - mejor usar ansible-vault
+    ipa_admin_user: "admin"
+    ipa_admin_password: "{{ vault_ipa_admin_password }}"  # definir en vault
+
+  tasks:
+
+    # ---- Comprobar si ya está inscrito ----
+    - name: "Comprobar si el cliente ya está inscrito en IPA"
+      stat:
+        path: /etc/ipa/default.conf
+      register: ipa_inscrito
+
+    # ---- Instalar cliente IPA ----
+    - name: "Instalar paquetes cliente FreeIPA"
+      apt:
+        name:
+          - freeipa-client
+          - sssd
+          - sssd-tools
+          - libsss-sudo
+          - oddjob
+          - oddjob-mkhomedir
+          - adcli
+        state: present
+      when: not ipa_inscrito.stat.exists
+
+    # ---- Enrollment ----
+    - name: "Inscribir cliente en el dominio FreeIPA"
+      command: >
+        ipa-client-install
+        --server={{ servidores.ipa.fqdn }}
+        --domain={{ servidores.ipa.dominio_ipa }}
+        --realm={{ servidores.ipa.realm }}
+        --principal={{ ipa_admin_user }}
+        --password={{ ipa_admin_password }}
+        --hostname={{ ansible_fqdn }}
+        --mkhomedir
+        --enable-dns-updates
+        --ssh-trust-dns
+        --unattended
+      when: not ipa_inscrito.stat.exists
+      register: ipa_install_result
+      notify: reiniciar_sssd
+
+    # ---- SSSD: configuración adicional ----
+    - name: "Asegurar configuración de SSSD"
+      blockinfile:
+        path: /etc/sssd/sssd.conf
+        marker: "# {mark} ANSIBLE MANAGED"
+        block: |
+          [domain/{{ servidores.ipa.dominio_ipa }}]
+          cache_credentials = True
+          krb5_store_password_if_offline = True
+          ipa_domain = {{ servidores.ipa.dominio_ipa }}
+          id_provider = ipa
+          auth_provider = ipa
+          access_provider = ipa
+          ipa_hostname = {{ ansible_fqdn }}
+          chpass_provider = ipa
+          ipa_server = _srv_, {{ servidores.ipa.fqdn }}
+          dns_discovery_domain = {{ servidores.ipa.dominio_ipa }}
+          ldap_tls_cacert = /etc/ipa/ca.crt
+          sudo_provider = ipa
+          selinux_provider = none
+          [sssd]
+          services = nss, pam, ssh, sudo
+          domains = {{ servidores.ipa.dominio_ipa }}
+          [nss]
+          homedir_substring = /home
+          [pam]
+          offline_credentials_expiration = 7
+        create: false
+        backup: true
+      notify: reiniciar_sssd
+      when: ipa_inscrito.stat.exists
+
+    # ---- PAM: creación automática de homedir ----
+    - name: "Habilitar oddjob-mkhomedir en PAM"
+      command: authconfig --enablemkhomedir --update
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Alternativa: configurar pam_mkhomedir directamente"
+      lineinfile:
+        path: /etc/pam.d/common-session
+        line: "session required pam_mkhomedir.so skel=/etc/skel umask=0077"
+        insertafter: "session.*pam_unix.so"
+      notify: reiniciar_sssd
+
+    # ---- Habilitar oddjob ----
+    - name: "Habilitar y arrancar oddjobd"
+      systemd:
+        name: oddjobd
+        enabled: true
+        state: started
+
+    # ---- Permisos de sudoers a través de IPA ----
+    - name: "Configurar nsswitch para sudoers vía SSSD"
+      lineinfile:
+        path: /etc/nsswitch.conf
+        regexp: '^sudoers:'
+        line: 'sudoers: files sss'
+        backup: true
+
+    # ---- Configurar login gráfico (LightDM) para dominio ----
+    - name: "Crear configuración LightDM para IPA"
+      copy:
+        dest: /etc/lightdm/lightdm.conf.d/50-ikastetxea.conf
+        content: |
+          [Seat:*]
+          # Permitir login manual (para usuarios de dominio)
+          greeter-show-manual-login=true
+          greeter-hide-users=false
+          # Sesión por defecto
+          user-session=cinnamon
+          # No autologin (requerimos autenticación IPA)
+          autologin-user=
+        owner: root
+        group: root
+        mode: '0644'
+
+    # ---- Verificar conexión con IPA ----
+    - name: "Verificar conectividad con FreeIPA"
+      command: ipa ping
+      register: ipa_ping
+      changed_when: false
+      failed_when: ipa_ping.rc != 0
+      when: ipa_inscrito.stat.exists
+
+    - name: "Mostrar resultado de verificación IPA"
+      debug:
+        msg: "{{ ipa_ping.stdout }}"
+      when: ipa_inscrito.stat.exists and ipa_ping is defined
+
+  handlers:
+    - name: reiniciar_sssd
+      systemd:
+        name: sssd
+        state: restarted
+        enabled: true

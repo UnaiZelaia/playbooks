@@ -1,0 +1,150 @@
+---
+# =============================================================
+# PLAYBOOK 05 · Configuración de impresoras CUPS
+# - Instala cliente CUPS
+# - Apunta al servidor CUPS del centro
+# - Configura impresoras por aula/planta (usando IPA groups)
+# =============================================================
+- name: "Configuración de impresoras CUPS"
+  hosts: clientes
+  become: true
+  gather_facts: true
+
+  vars:
+    # Lista de impresoras del centro - ajustar según infraestructura real
+    impresoras_centro:
+      - nombre: "Impresora-Sala-Profesores"
+        uri: "ipp://{{ servidores.cups.fqdn }}/printers/Sala-Profesores"
+        descripcion: "Impresora sala de profesores"
+        ubicacion: "Sala Profesores - Planta 1"
+        compartida: false
+        grupos_acceso: ["profesores", "administracion"]
+
+      - nombre: "Impresora-Aula-101"
+        uri: "ipp://{{ servidores.cups.fqdn }}/printers/Aula-101"
+        descripcion: "Impresora Aula 101"
+        ubicacion: "Aula 101 - Planta 1"
+        compartida: false
+        grupos_acceso: ["profesores", "alumnos"]
+
+      - nombre: "Impresora-Administracion"
+        uri: "ipp://{{ servidores.cups.fqdn }}/printers/Administracion"
+        descripcion: "Impresora de Administración"
+        ubicacion: "Administración - Planta 0"
+        compartida: false
+        grupos_acceso: ["administracion"]
+
+      - nombre: "Impresora-Biblioteca"
+        uri: "ipp://{{ servidores.cups.fqdn }}/printers/Biblioteca"
+        descripcion: "Impresora Biblioteca"
+        ubicacion: "Biblioteca - Planta 0"
+        compartida: false
+        grupos_acceso: ["profesores", "alumnos", "administracion"]
+
+  tasks:
+
+    # ---- Instalar cliente CUPS ----
+    - name: "Instalar paquetes CUPS cliente"
+      apt:
+        name:
+          - cups-client
+          - cups-bsd
+          - printer-driver-gutenprint
+          - printer-driver-hpijs
+          - hplip                     # HP
+          - openprinting-ppds
+          - foomatic-db-compressed-ppds
+          - system-config-printer
+        state: present
+
+    # ---- Configurar ServerName en cups-client.conf ----
+    - name: "Apuntar cliente CUPS al servidor del centro"
+      copy:
+        dest: /etc/cups/client.conf
+        content: |
+          # Gestionado por Ansible - Arriagakoharitza Ikastetxea
+          ServerName {{ servidores.cups.fqdn }}
+          Encryption IfRequested
+        owner: root
+        group: lp
+        mode: '0640'
+
+    # ---- Configurar CUPS local (daemon) ----
+    - name: "Configurar cupsd.conf básico en cliente"
+      lineinfile:
+        path: /etc/cups/cupsd.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        backup: true
+      loop:
+        - regexp: '^BrowseRemoteProtocols'
+          line: 'BrowseRemoteProtocols dnssd cups'
+        - regexp: '^BrowseProtocols'
+          line: 'BrowseProtocols all'
+        - regexp: '^Browsing'
+          line: 'Browsing On'
+      notify: reiniciar_cups
+
+    # ---- Habilitar y arrancar CUPS ----
+    - name: "Habilitar y arrancar servicio CUPS"
+      systemd:
+        name: cups
+        enabled: true
+        state: started
+
+    # ---- Añadir impresoras via lpadmin ----
+    - name: "Comprobar si la impresora ya existe"
+      command: "lpstat -p {{ item.nombre }}"
+      register: printer_exists
+      changed_when: false
+      failed_when: false
+      loop: "{{ impresoras_centro }}"
+      loop_control:
+        label: "{{ item.nombre }}"
+
+    - name: "Añadir impresoras al sistema"
+      command: >
+        lpadmin
+        -p "{{ item.item.nombre }}"
+        -E
+        -v "{{ item.item.uri }}"
+        -D "{{ item.item.descripcion }}"
+        -L "{{ item.item.ubicacion }}"
+        -m everywhere
+      loop: "{{ printer_exists.results }}"
+      loop_control:
+        label: "{{ item.item.nombre }}"
+      when: item.rc != 0
+      ignore_errors: true
+
+    # ---- Definir impresora por defecto ----
+    - name: "Establecer impresora por defecto según perfil"
+      command: lpoptions -d Impresora-Sala-Profesores
+      when: perfil_usuario == 'profesor'
+      ignore_errors: true
+
+    - name: "Establecer impresora por defecto para alumnos"
+      command: lpoptions -d Impresora-Biblioteca
+      when: perfil_usuario == 'alumno'
+      ignore_errors: true
+
+    - name: "Establecer impresora por defecto para administración"
+      command: lpoptions -d Impresora-Administracion
+      when: perfil_usuario == 'administracion'
+      ignore_errors: true
+
+    # ---- Verificar impresoras ----
+    - name: "Listar impresoras configuradas"
+      command: lpstat -p -d
+      register: lpstat_output
+      changed_when: false
+
+    - name: "Mostrar impresoras disponibles"
+      debug:
+        msg: "{{ lpstat_output.stdout_lines }}"
+
+  handlers:
+    - name: reiniciar_cups
+      systemd:
+        name: cups
+        state: restarted

@@ -1,0 +1,38 @@
+# =============================================================
+# Variables específicas para ALUMNOS
+# =============================================================
+
+perfil_usuario: "alumno"
+
+paquetes_extra:
+  - gcompris-qt
+  - tuxmath
+  - tuxpaint
+  - scratch
+  - geogebra
+  - stellarium
+  - supertuxkart    # Juego educativo/recreo
+
+# Alumnos: acceso limitado a impresoras
+cups_grupos_acceso:
+  - "alumnos-impresoras"
+
+# Bloqueo de pantalla más rápido en aulas
+bloqueo_pantalla_minutos: 5
+
+# Solo carpeta personal y compartida de lectura
+shares_nfs:
+  - nombre: "Recursos Compartidos"
+    origen: "nas.arriagakoharitza.net:/exports/compartido"
+    destino: "/mnt/recursos/compartido"
+    opciones: "ro"   # Solo lectura
+
+# Sin sudo en absoluto
+sudo_permitido: false
+
+# Restricciones de escritorio
+cinnamon_restricciones:
+  deshabilitar_gestor_archivos_raiz: true
+  deshabilitar_terminal: false   # true si se quiere bloquear en aulas
+  deshabilitar_configuracion_sistema: true
+  deshabilitar_admin_paquetes: true

@@ -1,0 +1,36 @@
+# =============================================================
+# Variables específicas para PROFESORES
+# =============================================================
+
+perfil_usuario: "profesor"
+
+paquetes_extra:
+  - thunderbird
+  - thunderbird-locale-eu
+  - thunderbird-locale-es
+  - nextcloud-desktop      # Si hay Nextcloud
+  - libreoffice-impress
+  - zoom                   # Si se usa; sustituir por Jitsi/BigBlueButton
+  - cheese                 # Webcam
+
+# Profesores pueden instalar impresoras y acceder a más recursos
+cups_grupos_acceso:
+  - "profesores-impresoras"
+  - "todas-impresoras"
+
+# Política de pantalla de bloqueo (minutos)
+bloqueo_pantalla_minutos: 15
+
+# Carpetas de red montadas (NFS/Samba)
+shares_nfs:
+  - nombre: "Recursos Profesores"
+    origen: "nas.arriagakoharitza.net:/exports/profesores"
+    destino: "/mnt/recursos/profesores"
+  - nombre: "Recursos Compartidos"
+    origen: "nas.arriagakoharitza.net:/exports/compartido"
+    destino: "/mnt/recursos/compartido"
+
+# Acceso a configuración del sistema
+sudo_comandos_extra:
+  - "/usr/bin/apt install"
+  - "/usr/bin/systemctl restart cups"

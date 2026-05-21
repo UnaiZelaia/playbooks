@@ -1,0 +1,285 @@
+---
+# =============================================================
+# PLAYBOOK 04 · Personalización de Firefox
+# - Políticas empresariales (policies.json)
+# - Marcadores predefinidos (web del centro, cloud, GLPI...)
+# - Extensiones preinstaladas
+# - Página de inicio corporativa
+# - Configuración de privacidad y seguridad
+# =============================================================
+- name: "Personalización de Firefox"
+  hosts: clientes
+  become: true
+  gather_facts: true
+
+  vars:
+    firefox_policies_dir: "/usr/lib/firefox/distribution"
+    firefox_policies_dir_alt: "/usr/lib/firefox-esr/distribution"
+    firefox_autoconfig_dir: "/usr/lib/firefox"
+
+  tasks:
+
+    # ---- Detectar ruta de Firefox ----
+    - name: "Detectar directorio de instalación de Firefox"
+      stat:
+        path: "{{ item }}"
+      loop:
+        - /usr/lib/firefox
+        - /usr/lib/firefox-esr
+        - /usr/lib64/firefox
+      register: firefox_dirs
+
+    - name: "Establecer ruta de Firefox"
+      set_fact:
+        firefox_install_dir: "{{ item.item }}"
+      loop: "{{ firefox_dirs.results }}"
+      when: item.stat.exists
+      loop_control:
+        label: "{{ item.item }}"
+
+    # ---- Crear directorio distribution ----
+    - name: "Crear directorio de distribución Firefox"
+      file:
+        path: "{{ firefox_install_dir }}/distribution"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: firefox_install_dir is defined
+
+    # ---- Policies.json: configuración empresarial ----
+    - name: "Desplegar policies.json de Firefox"
+      copy:
+        dest: "{{ firefox_install_dir }}/distribution/policies.json"
+        content: |
+          {
+            "policies": {
+              "AppAutoUpdate": false,
+              "DisableFirefoxStudies": true,
+              "DisableTelemetry": true,
+              "DisablePocket": true,
+              "DisableFirefoxAccounts": false,
+              "DisableFormHistory": false,
+              "DisablePasswordReveal": false,
+              "DisplayBookmarksToolbar": "always",
+              "DisplayMenuBar": "default-off",
+              "DontCheckDefaultBrowser": true,
+              "EnableTrackingProtection": {
+                "Value": true,
+                "Locked": false,
+                "Cryptomining": true,
+                "Fingerprinting": true
+              },
+              "FirefoxHome": {
+                "Search": true,
+                "TopSites": false,
+                "SponsoredTopSites": false,
+                "Highlights": false,
+                "Pocket": false,
+                "SponsoredPocket": false,
+                "Snippets": false,
+                "Locked": false
+              },
+              "Homepage": {
+                "URL": "{{ centro.web }}",
+                "Locked": false,
+                "StartPage": "homepage"
+              },
+              "NewTabPage": false,
+              "NoDefaultBookmarks": false,
+              "OfferToSaveLogins": true,
+              "PasswordManagerEnabled": true,
+              "SearchBar": "unified",
+              "SearchEngines": {
+                "Default": "Google",
+                "Add": [
+                  {
+                    "Name": "Hezkuntza",
+                    "URLTemplate": "https://www.euskadi.eus/contenidos/informacion/hezkuntzas/eu_def/index.shtml?s={searchTerms}",
+                    "Description": "Búsqueda en Departamento de Educación"
+                  }
+                ]
+              },
+              "Bookmarks": [
+                {
+                  "Title": "── IKASTETXEA ──",
+                  "Placement": "toolbar",
+                  "Folder": "Ikastetxea",
+                  "Children": [
+                    {
+                      "Title": "🏫 Web del Centro",
+                      "URL": "{{ centro.web }}",
+                      "Description": "Página web oficial del centro"
+                    },
+                    {
+                      "Title": "🎫 Soporte / Tickets (GLPI)",
+                      "URL": "{{ servidores.glpi.url }}",
+                      "Description": "Solicitar soporte técnico o reportar incidencias"
+                    },
+                    {
+                      "Title": "☁️ Cloud Educación",
+                      "URL": "{{ centro.cloud_educacion }}",
+                      "Description": "Cloud del Departamento de Educación del País Vasco"
+                    }
+                  ]
+                },
+                {
+                  "Title": "── EDUCACIÓN ──",
+                  "Placement": "toolbar",
+                  "Folder": "Baliabideak / Recursos",
+                  "Children": [
+                    {
+                      "Title": "📚 Hezkuntza.eus",
+                      "URL": "https://www.hezkuntza.eus",
+                      "Description": "Departamento de Educación del Gobierno Vasco"
+                    },
+                    {
+                      "Title": "📖 Irakasleak.eus",
+                      "URL": "https://irakasleak.hezkuntza.net",
+                      "Description": "Portal del profesorado"
+                    },
+                    {
+                      "Title": "🔬 Khan Academy (EU)",
+                      "URL": "https://eu.khanacademy.org",
+                      "Description": "Plataforma educativa gratuita"
+                    },
+                    {
+                      "Title": "📐 GeoGebra",
+                      "URL": "https://www.geogebra.org",
+                      "Description": "Matemáticas interactivas"
+                    },
+                    {
+                      "Title": "📚 Biblioteca digital Irakurgaiak",
+                      "URL": "https://irakurgaiak.hezkuntza.net",
+                      "Description": "Biblioteca digital educativa"
+                    },
+                    {
+                      "Title": "🌐 Wikipedia EU",
+                      "URL": "https://eu.wikipedia.org",
+                      "Description": "Wikipedia en Euskera"
+                    }
+                  ]
+                },
+                {
+                  "Title": "── HERRAMIENTAS ──",
+                  "Placement": "toolbar",
+                  "Folder": "Tresnak / Herramientas",
+                  "Children": [
+                    {
+                      "Title": "📧 Correo",
+                      "URL": "https://webmail.arriagakoharitza.net",
+                      "Description": "Webmail del centro"
+                    },
+                    {
+                      "Title": "🗓️ Calendario",
+                      "URL": "https://{{ servidores.glpi.fqdn }}/front/planning.php",
+                      "Description": "Calendario y planificación"
+                    },
+                    {
+                      "Title": "🖨️ Estado Impresoras",
+                      "URL": "http://{{ servidores.cups.fqdn }}:631",
+                      "Description": "Gestión de impresoras CUPS"
+                    }
+                  ]
+                }
+              ],
+              "Certificates": {
+                "ImportEnterprises": true,
+                "Install": [
+                  "/etc/ipa/ca.crt"
+                ]
+              },
+              "Permissions": {
+                "Notifications": {
+                  "Allow": ["{{ centro.web }}"],
+                  "Block": [],
+                  "Locked": false
+                }
+              },
+              "Extensions": {
+                "Install": [
+                  "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+                ],
+                "Locked": [],
+                "Uninstall": []
+              },
+              "ManagedBookmarks": []
+            }
+          }
+        owner: root
+        group: root
+        mode: '0644'
+      when: firefox_install_dir is defined
+      notify: recargar_firefox_policies
+
+    # ---- Importar certificado IPA en almacén del sistema ----
+    - name: "Copiar certificado CA de IPA al almacén del sistema"
+      copy:
+        src: /etc/ipa/ca.crt
+        dest: /usr/local/share/ca-certificates/ipa-arriagakoharitza.crt
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0644'
+      when: ansible_facts['stat']['/etc/ipa/ca.crt'] is defined
+      ignore_errors: true
+
+    - name: "Actualizar almacén de CAs del sistema"
+      command: update-ca-certificates
+      changed_when: false
+      ignore_errors: true
+
+    # ---- autoconfig.js para configuraciones adicionales ----
+    - name: "Crear autoconfig.js"
+      copy:
+        dest: "{{ firefox_install_dir }}/autoconfig.js"
+        content: |
+          // Gestionado por Ansible - Arriagakoharitza Ikastetxea
+          // INSTRUCCIÓN: esta línea DEBE ir primero
+          pref("general.config.obscure_value", 0);
+          pref("general.config.filename", "mozilla.cfg");
+        owner: root
+        group: root
+        mode: '0644'
+      when: firefox_install_dir is defined
+
+    - name: "Crear mozilla.cfg con preferencias adicionales"
+      copy:
+        dest: "{{ firefox_install_dir }}/mozilla.cfg"
+        content: |
+          // Gestionado por Ansible - Arriagakoharitza Ikastetxea
+          // Primera línea DEBE ser un comentario
+          
+          // Idioma preferido
+          defaultPref("intl.accept_languages", "eu, eu-ES, es, es-ES, en");
+          defaultPref("general.useragent.locale", "eu");
+          
+          // Privacidad
+          defaultPref("privacy.trackingprotection.enabled", true);
+          defaultPref("browser.send_pings", false);
+          defaultPref("geo.enabled", false);
+          
+          // Desactivar sugerencias patrocinadas
+          defaultPref("browser.urlbar.sponsoredTopSites", false);
+          defaultPref("browser.urlbar.suggest.quicksuggest.sponsored", false);
+          
+          // Comportamiento de descarga
+          defaultPref("browser.download.folderList", 2);
+          defaultPref("browser.download.useDownloadDir", true);
+          defaultPref("browser.download.dir", "/home/${username}/Deskargak");
+          
+          // Accesibilidad
+          defaultPref("browser.display.use_system_colors", true);
+          
+          // Actualización gestionada por APT, no por Firefox
+          lockPref("app.update.enabled", false);
+          lockPref("app.update.auto", false);
+        owner: root
+        group: root
+        mode: '0644'
+      when: firefox_install_dir is defined
+
+  handlers:
+    - name: recargar_firefox_policies
+      debug:
+        msg: "Políticas de Firefox actualizadas. Surtirán efecto al reiniciar Firefox."

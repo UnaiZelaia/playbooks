@@ -1,0 +1,112 @@
+# =============================================================
+# Variables globales - group_vars/all.yml
+# =============================================================
+
+# --- Datos del centro ---
+centro:
+  nombre: "Arriagakoharitza Ikastetxea"
+  dominio: "arriagakoharitza.net"
+  web: "https://www.arriagakoharitza.net"
+  cloud_educacion: "https://hezkuntza.hezkuntzacloud.eus"  # Ajustar URL real
+  soporte_email: "soporte@arriagakoharitza.net"
+
+# --- Servidores de infraestructura ---
+servidores:
+  ipa:
+    ip: "10.2.101.231"
+    fqdn: "ipa.arriagakoharitza.net"
+    realm: "ARRIAGAKOHARITZA.NET"
+    dominio_ipa: "arriagakoharitza.net"
+  cups:
+    ip: "10.2.101.232"
+    fqdn: "cups.arriagakoharitza.net"
+  glpi:
+    ip: "10.2.101.234"
+    fqdn: "glpi.arriagakoharitza.net"
+    url: "https://glpi.arriagakoharitza.net"
+  ansible:
+    ip: "10.2.101.233"
+    fqdn: "ans.arriagakoharitza.net"
+
+# --- DNS ---
+dns:
+  primario: "10.2.101.231"   # FreeIPA hace de DNS
+  secundario: "8.8.8.8"
+  busqueda: "arriagakoharitza.net"
+
+# --- NTP ---
+ntp_servers:
+  - "10.2.101.231"   # FreeIPA también hace de NTP
+  - "pool.ntp.org"
+
+# --- Zona horaria y locale ---
+timezone: "Europe/Madrid"
+locale: "eu_ES.UTF-8"        # Euskera; cambiar a es_ES.UTF-8 si se prefiere
+locale_fallback: "es_ES.UTF-8"
+keyboard_layout: "es"
+keyboard_variant: "nodeadkeys"
+
+# --- Paquetes base a instalar en todos los clientes ---
+paquetes_base:
+  - curl
+  - wget
+  - git
+  - htop
+  - net-tools
+  - nfs-common
+  - rsync
+  - unzip
+  - p7zip-full
+  - software-properties-common
+  - apt-transport-https
+  - ca-certificates
+  - gnupg
+
+# --- Paquetes educativos ---
+paquetes_educativos:
+  - firefox
+  - libreoffice
+  - libreoffice-l10n-eu       # Idioma Euskera
+  - libreoffice-l10n-es       # Idioma Español
+  - libreoffice-help-eu
+  - vlc
+  - okular
+  - gimp
+  - inkscape
+  - audacity
+  - kdenlive
+  - kolourpaint
+  - geogebra
+  - scratch
+  - stellarium
+  - tuxmath
+  - tuxpaint
+  - gcompris-qt
+  - krita
+  - evince
+  - thunderbird               # Solo profesores/admin
+  - filezilla
+  - transmission-gtk
+
+# --- GLPI Agent ---
+glpi_agent:
+  version: "1.7.3"
+  server_url: "https://glpi.arriagakoharitza.net/front/inventory.php"
+  tag: "linux-mint-cliente"
+  intervalo_horas: 24
+
+# --- Firefox Policies ---
+firefox_policies:
+  homepage: "https://www.arriagakoharitza.net"
+  new_tab: "https://www.arriagakoharitza.net"
+  deshabilitar_telemetria: true
+  deshabilitar_pocket: true
+  deshabilitar_firefox_accounts: true
+  bloquear_extension_install: false  # true en aulas si se desea más control
+
+# --- Wallpaper corporativo ---
+wallpaper_path: "/usr/share/backgrounds/arriagakoharitza"
+wallpaper_default: "arriagakoharitza_fondo.jpg"
+
+# --- Sudoers: grupo de administradores locales ---
+grupo_admin_local: "ikastetxe-admins"

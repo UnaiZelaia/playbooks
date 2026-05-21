@@ -1,0 +1,157 @@
+---
+# =============================================================
+# PLAYBOOK 06 · Agente GLPI (inventario automático y tickets)
+# - Instala glpi-agent
+# - Configura apuntando al servidor GLPI del centro
+# - Programa inventario periódico
+# - Tags de clasificación por perfil
+# =============================================================
+- name: "Instalación y configuración del agente GLPI"
+  hosts: clientes
+  become: true
+  gather_facts: true
+
+  vars:
+    glpi_agent_deb: "glpi-agent_{{ glpi_agent.version }}_all.deb"
+    glpi_agent_url: "https://github.com/glpi-project/glpi-agent/releases/download/{{ glpi_agent.version }}/{{ glpi_agent_deb }}"
+    glpi_agent_tmp: "/tmp/{{ glpi_agent_deb }}"
+
+  tasks:
+
+    # ---- Comprobar si ya está instalado ----
+    - name: "Comprobar versión de glpi-agent instalada"
+      command: glpi-agent --version
+      register: glpi_installed
+      changed_when: false
+      failed_when: false
+
+    # ---- Descargar e instalar agente ----
+    - name: "Descargar glpi-agent {{ glpi_agent.version }}"
+      get_url:
+        url: "{{ glpi_agent_url }}"
+        dest: "{{ glpi_agent_tmp }}"
+        mode: '0644'
+      when: glpi_installed.rc != 0
+
+    - name: "Instalar dependencias de glpi-agent"
+      apt:
+        name:
+          - libwww-perl
+          - libxml-treepp-perl
+          - libyaml-perl
+          - libnet-ip-perl
+          - libdigest-md5-perl
+          - libparse-edid-perl
+          - libio-socket-ssl-perl
+          - dmidecode
+          - lshw
+          - pciutils
+          - usbutils
+          - net-tools
+          - smartmontools
+        state: present
+      ignore_errors: true
+
+    - name: "Instalar glpi-agent desde .deb"
+      apt:
+        deb: "{{ glpi_agent_tmp }}"
+        state: present
+      when: glpi_installed.rc != 0
+      notify: reiniciar_glpi_agent
+
+    # ---- Configurar agente ----
+    - name: "Configurar glpi-agent.cfg"
+      copy:
+        dest: /etc/glpi-agent/agent.cfg
+        content: |
+          # =======================================================
+          # Configuración GLPI Agent - Arriagakoharitza Ikastetxea
+          # Gestionado por Ansible - no editar manualmente
+          # =======================================================
+
+          # Servidor GLPI
+          server = {{ glpi_agent.server_url }}
+
+          # Identificación del equipo
+          tag = {{ glpi_agent.tag }}-{{ perfil_usuario }}
+
+          # Intervalo de inventario (segundos)
+          # {{ glpi_agent.intervalo_horas }}h = {{ glpi_agent.intervalo_horas | int * 3600 }}s
+          delay = {{ glpi_agent.intervalo_horas | int * 3600 }}
+
+          # Timeout de conexión
+          timeout = 180
+
+          # Nivel de log (none, error, warning, info, debug, debug2)
+          logger = syslog
+          loglevel = warning
+
+          # Ejecutar como daemon
+          daemon = 1
+
+          # Módulos activos
+          no-task = 
+
+          # Permitir acceso local a la interfaz web del agente
+          # (para ver inventario local en http://localhost:62354)
+          listen = 1
+          httpd-port = 62354
+          httpd-trust = 127.0.0.1, {{ servidores.glpi.ip }}, {{ servidores.ansible.ip }}
+
+          # No SSL estricto (si el cert de GLPI es interno IPA)
+          no-ssl-check = 0
+          ca-cert-file = /etc/ipa/ca.crt
+
+          # Máximo de retries
+          backend-collect-timeout = 120
+        owner: root
+        group: root
+        mode: '0640'
+      notify: reiniciar_glpi_agent
+
+    # ---- Módulos adicionales ----
+    - name: "Configurar módulo de inventario"
+      copy:
+        dest: /etc/glpi-agent/conf.d/inventory.cfg
+        content: |
+          # Módulo de inventario hardware/software
+          [inventory]
+          no-category = 
+          # Incluir escaneo de puertos USB
+          # no-task =
+        owner: root
+        group: root
+        mode: '0640'
+      notify: reiniciar_glpi_agent
+
+    # ---- Habilitar y arrancar servicio ----
+    - name: "Habilitar y arrancar glpi-agent"
+      systemd:
+        name: glpi-agent
+        enabled: true
+        state: started
+
+    # ---- Forzar primer inventario ----
+    - name: "Forzar envío de inventario inicial"
+      command: glpi-agent --force --debug
+      register: inventario_inicial
+      changed_when: false
+      ignore_errors: true
+      when: glpi_installed.rc != 0
+
+    - name: "Mostrar resultado del inventario inicial"
+      debug:
+        msg: "{{ inventario_inicial.stdout_lines[-5:] }}"
+      when: inventario_inicial is defined and inventario_inicial.stdout_lines is defined
+
+    # ---- Limpiar .deb temporal ----
+    - name: "Limpiar paquete .deb temporal"
+      file:
+        path: "{{ glpi_agent_tmp }}"
+        state: absent
+
+  handlers:
+    - name: reiniciar_glpi_agent
+      systemd:
+        name: glpi-agent
+        state: restarted

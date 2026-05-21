@@ -1,0 +1,17 @@
+# =============================================================
+# VAULT - Variables secretas (CIFRAR con ansible-vault)
+# Uso:
+#   ansible-vault create inventory/group_vars/all/vault.yml
+#   ansible-vault edit   inventory/group_vars/all/vault.yml
+#   ansible-playbook site.yml --ask-vault-pass
+#   ansible-playbook site.yml --vault-password-file ~/.vault_pass
+# =============================================================
+
+# Contraseña admin de FreeIPA (para enrollment de clientes)
+vault_ipa_admin_password: "CAMBIAR_ESTO"
+
+# Token GLPI para API (si se usa)
+vault_glpi_api_token: "CAMBIAR_ESTO"
+
+# Contraseña del usuario ansible_admin en los clientes
+vault_ansible_admin_password: "CAMBIAR_ESTO"

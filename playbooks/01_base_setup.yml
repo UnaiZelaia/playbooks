@@ -1,0 +1,196 @@
+---
+# =============================================================
+# PLAYBOOK 01 · Configuración base del sistema
+# - Hostname, hosts, DNS, NTP, locale, teclado
+# - Actualización inicial del sistema
+# - Paquetes base esenciales
+# =============================================================
+- name: "Configuración base del sistema"
+  hosts: clientes
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # ---- Actualización de paquetes ----
+    - name: "Actualizar caché de APT"
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: "Actualizar todos los paquetes del sistema"
+      apt:
+        upgrade: dist
+        autoremove: true
+        autoclean: true
+      register: apt_upgrade
+      notify: reiniciar_si_kernel
+
+    # ---- Zona horaria ----
+    - name: "Configurar zona horaria"
+      timezone:
+        name: "{{ timezone }}"
+
+    # ---- Locale ----
+    - name: "Instalar soporte de locales"
+      apt:
+        name:
+          - locales
+          - locales-all
+        state: present
+
+    - name: "Generar locale euskera"
+      locale_gen:
+        name: "eu_ES.UTF-8"
+        state: present
+
+    - name: "Generar locale español"
+      locale_gen:
+        name: "es_ES.UTF-8"
+        state: present
+
+    - name: "Establecer locale por defecto"
+      copy:
+        dest: /etc/default/locale
+        content: |
+          LANG="{{ locale }}"
+          LC_ALL="{{ locale }}"
+          LANGUAGE="eu_ES:eu:es_ES:es"
+        owner: root
+        group: root
+        mode: '0644'
+
+    # ---- Teclado ----
+    - name: "Configurar distribución de teclado"
+      copy:
+        dest: /etc/default/keyboard
+        content: |
+          XKBMODEL="pc105"
+          XKBLAYOUT="{{ keyboard_layout }}"
+          XKBVARIANT="{{ keyboard_variant }}"
+          XKBOPTIONS=""
+          BACKSPACE="guess"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: aplicar_teclado
+
+    # ---- NTP / Chrony ----
+    - name: "Instalar chrony"
+      apt:
+        name: chrony
+        state: present
+
+    - name: "Configurar servidores NTP del centro"
+      template:
+        src: templates/chrony.conf.j2
+        dest: /etc/chrony/chrony.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reiniciar_chrony
+
+    - name: "Habilitar y arrancar chrony"
+      systemd:
+        name: chrony
+        enabled: true
+        state: started
+
+    # ---- Resolución DNS ----
+    - name: "Configurar /etc/resolv.conf apuntando a FreeIPA"
+      copy:
+        dest: /etc/resolv.conf
+        content: |
+          # Gestionado por Ansible - no editar manualmente
+          domain {{ servidores.ipa.dominio_ipa }}
+          search {{ servidores.ipa.dominio_ipa }}
+          nameserver {{ servidores.ipa.ip }}
+          nameserver {{ dns.secundario }}
+        owner: root
+        group: root
+        mode: '0644'
+      # Protegemos el fichero para que NetworkManager no lo sobreescriba
+      notify: proteger_resolv
+
+    # ---- Paquetes base ----
+    - name: "Instalar paquetes base esenciales"
+      apt:
+        name: "{{ paquetes_base }}"
+        state: present
+
+    # ---- SSH: deshabilitar acceso root ----
+    - name: "Deshabilitar login root por SSH"
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+        backup: true
+      notify: reiniciar_ssh
+
+    # ---- Usuario de servicio Ansible ----
+    - name: "Crear usuario de gestión Ansible"
+      user:
+        name: ansible_admin
+        comment: "Usuario de gestión Ansible"
+        shell: /bin/bash
+        groups: sudo
+        append: true
+        create_home: true
+
+    - name: "Añadir clave pública SSH para ansible_admin"
+      authorized_key:
+        user: ansible_admin
+        state: present
+        key: "{{ lookup('file', '~/.ssh/ansible_ed25519.pub') }}"
+
+    # ---- Hosts locales críticos ----
+    - name: "Añadir entradas críticas en /etc/hosts"
+      blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} ANSIBLE MANAGED - Infraestructura Ikastetxea"
+        block: |
+          {{ servidores.ipa.ip }}    {{ servidores.ipa.fqdn }} ipa
+          {{ servidores.cups.ip }}   {{ servidores.cups.fqdn }} cups
+          {{ servidores.glpi.ip }}   {{ servidores.glpi.fqdn }} glpi
+          {{ servidores.ansible.ip }} {{ servidores.ansible.fqdn }} ans
+
+    # ---- MOTD personalizado ----
+    - name: "Configurar MOTD del centro"
+      copy:
+        dest: /etc/motd
+        content: |
+          ╔═══════════════════════════════════════════════╗
+          ║     {{ centro.nombre }}                       ║
+          ║     Sistema gestionado por Ansible            ║
+          ║     Soporte: {{ centro.soporte_email }}       ║
+          ╚═══════════════════════════════════════════════╝
+        owner: root
+        group: root
+        mode: '0644'
+
+  # ---- Handlers ----
+  handlers:
+    - name: reiniciar_si_kernel
+      reboot:
+        msg: "Reiniciando tras actualización de kernel"
+        pre_reboot_delay: 10
+        post_reboot_delay: 30
+        test_command: uptime
+      when: apt_upgrade.changed and "'linux-image' in apt_upgrade.stdout"
+
+    - name: aplicar_teclado
+      command: dpkg-reconfigure -f noninteractive keyboard-configuration
+
+    - name: reiniciar_chrony
+      systemd:
+        name: chrony
+        state: restarted
+
+    - name: reiniciar_ssh
+      systemd:
+        name: ssh
+        state: restarted
+
+    - name: proteger_resolv
+      command: chattr +i /etc/resolv.conf
+      ignore_errors: true

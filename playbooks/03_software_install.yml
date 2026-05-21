@@ -1,0 +1,133 @@
+---
+# =============================================================
+# PLAYBOOK 03 · Instalación de software educativo
+# - Paquetes educativos base (todos los perfiles)
+# - Paquetes específicos por perfil (profesores/alumnos/admin)
+# - Flatpaks adicionales (opcional)
+# - Eliminar software no deseado
+# =============================================================
+- name: "Instalación de software educativo"
+  hosts: clientes
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # ---- Actualizar caché ----
+    - name: "Actualizar caché de APT"
+      apt:
+        update_cache: true
+        cache_valid_time: 1800
+
+    # ---- Añadir repositorios adicionales ----
+    - name: "Añadir repositorio de GeoGebra"
+      apt_repository:
+        repo: "deb http://www.geogebra.net/linux/ stable main"
+        state: present
+        filename: geogebra
+      ignore_errors: true
+
+    - name: "Añadir clave GPG de GeoGebra"
+      apt_key:
+        url: "https://static.geogebra.org/linux/office@geogebra.org.gpg.key"
+        state: present
+      ignore_errors: true
+
+    # ---- Software base educativo (todos los perfiles) ----
+    - name: "Instalar software educativo base"
+      apt:
+        name: "{{ paquetes_educativos }}"
+        state: present
+      register: install_base
+
+    # ---- Software específico por perfil ----
+    - name: "Instalar software extra por perfil"
+      apt:
+        name: "{{ paquetes_extra | default([]) }}"
+        state: present
+      when: paquetes_extra is defined and paquetes_extra | length > 0
+
+    # ---- Codecs multimedia ----
+    - name: "Instalar codecs multimedia"
+      apt:
+        name:
+          - mint-meta-codecs
+          - ubuntu-restricted-extras
+          - libavcodec-extra
+          - ffmpeg
+        state: present
+      ignore_errors: true
+
+    # ---- Fuentes adicionales ----
+    - name: "Instalar fuentes tipográficas"
+      apt:
+        name:
+          - fonts-liberation
+          - fonts-noto
+          - fonts-dejavu
+          - ttf-mscorefonts-installer
+          - fonts-urw-base35
+        state: present
+      ignore_errors: true
+
+    # ---- Flatpak (para apps no disponibles en APT) ----
+    - name: "Instalar soporte Flatpak"
+      apt:
+        name: flatpak
+        state: present
+
+    - name: "Añadir repositorio Flathub"
+      flatpak_remote:
+        name: flathub
+        state: present
+        flatpakrepo_url: https://flathub.org/repo/flathub.flatpakrepo
+
+    - name: "Instalar Flatpaks educativos"
+      flatpak:
+        name:
+          - org.kde.ktouch          # Mecanografía
+          - org.tuxpaint.Tuxpaint  # Pintura infantil
+        state: present
+      ignore_errors: true
+
+    # ---- Desinstalar software no deseado ----
+    - name: "Eliminar software innecesario/no deseado"
+      apt:
+        name:
+          - games
+          - gnome-games
+          - aisleriot            # Solitario
+          - glines               # Juego
+          - gnome-mahjongg
+          - gnome-mines
+          - gnome-sudoku
+          - transmission-gtk     # Si no se quiere P2P en aulas de alumnos
+        state: absent
+        purge: true
+      when: perfil_usuario == 'alumno'
+      ignore_errors: true
+
+    # ---- Limpiar caché APT ----
+    - name: "Limpiar caché APT"
+      apt:
+        autoclean: true
+        autoremove: true
+
+    # ---- Verificar instalaciones críticas ----
+    - name: "Verificar que Firefox está instalado"
+      command: which firefox
+      register: firefox_check
+      changed_when: false
+      failed_when: firefox_check.rc != 0
+
+    - name: "Verificar que LibreOffice está instalado"
+      command: libreoffice --version
+      register: lo_check
+      changed_when: false
+      failed_when: lo_check.rc != 0
+
+    - name: "Mostrar versiones instaladas"
+      debug:
+        msg:
+          - "Firefox: {{ firefox_check.stdout }}"
+          - "LibreOffice: {{ lo_check.stdout }}"

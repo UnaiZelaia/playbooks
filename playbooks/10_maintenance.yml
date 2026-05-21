@@ -1,0 +1,192 @@
+---
+# =============================================================
+# PLAYBOOK 10 · Mantenimiento y actualizaciones
+# - Actualización controlada del sistema
+# - Limpieza de archivos temporales
+# - Rotación de logs
+# - Verificación de integridad
+# - Reporte de estado
+# Uso: ansible-playbook site.yml --tags mantenimiento
+#      Recomendado: ejecutar fuera del horario escolar
+# =============================================================
+- name: "Mantenimiento del sistema"
+  hosts: clientes
+  become: true
+  gather_facts: true
+  serial: 5  # Actualizar de 5 en 5 para no saturar la red
+
+  vars:
+    mantenimiento_log: "/var/log/ansible-mantenimiento.log"
+    fecha_hoy: "{{ ansible_date_time.date }}"
+
+  tasks:
+
+    - name: "Registrar inicio de mantenimiento"
+      lineinfile:
+        path: "{{ mantenimiento_log }}"
+        line: "[{{ fecha_hoy }}] Inicio mantenimiento en {{ inventory_hostname }}"
+        create: true
+        mode: '0640'
+
+    # ================================================================
+    # ACTUALIZACIONES
+    # ================================================================
+    - name: "Actualizar caché de APT"
+      apt:
+        update_cache: true
+
+    - name: "Actualizar todos los paquetes"
+      apt:
+        upgrade: dist
+        autoremove: true
+        autoclean: true
+      register: apt_result
+
+    - name: "Registrar paquetes actualizados"
+      lineinfile:
+        path: "{{ mantenimiento_log }}"
+        line: "[{{ fecha_hoy }}] Paquetes actualizados: {{ apt_result.stdout_lines | length }} líneas"
+        create: true
+        mode: '0640'
+      when: apt_result.changed
+
+    # ================================================================
+    # LIMPIEZA DE ARCHIVOS TEMPORALES
+    # ================================================================
+    - name: "Limpiar /tmp (archivos > 7 días)"
+      find:
+        paths: /tmp
+        age: 7d
+        recurse: true
+      register: tmp_files
+
+    - name: "Eliminar archivos temporales antiguos"
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ tmp_files.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      ignore_errors: true
+
+    - name: "Limpiar caché de thumbnails de usuarios"
+      find:
+        paths: /home
+        patterns: ".cache/thumbnails"
+        file_type: directory
+        recurse: true
+        depth: 3
+      register: thumb_dirs
+
+    - name: "Limpiar thumbnails antiguos"
+      command: "find {{ item.path }} -type f -mtime +30 -delete"
+      loop: "{{ thumb_dirs.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      ignore_errors: true
+      changed_when: false
+
+    - name: "Limpiar caché de APT"
+      apt:
+        autoclean: true
+        autoremove: true
+
+    # ================================================================
+    # VERIFICACIONES DE INTEGRIDAD
+    # ================================================================
+    - name: "Verificar conectividad con FreeIPA"
+      command: ipa ping
+      register: ipa_ping
+      changed_when: false
+      failed_when: false
+
+    - name: "Verificar estado de SSSD"
+      command: sssctl domain-status {{ servidores.ipa.dominio_ipa }}
+      register: sssd_status
+      changed_when: false
+      failed_when: false
+
+    - name: "Verificar estado del agente GLPI"
+      systemd:
+        name: glpi-agent
+      register: glpi_status
+
+    - name: "Verificar estado de UFW"
+      command: ufw status
+      register: ufw_status
+      changed_when: false
+
+    - name: "Verificar estado de fail2ban"
+      command: fail2ban-client status
+      register: f2b_status
+      changed_when: false
+      failed_when: false
+
+    # ================================================================
+    # REACTIVAR SERVICIOS CAÍDOS
+    # ================================================================
+    - name: "Asegurar que servicios críticos están activos"
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - sssd
+        - glpi-agent
+        - fail2ban
+        - auditd
+        - chrony
+        - cups
+      ignore_errors: true
+
+    # ================================================================
+    # COMPROBAR ACTUALIZACIONES DE FIRMAS CLAMAV
+    # ================================================================
+    - name: "Actualizar firmas de ClamAV"
+      command: freshclam
+      changed_when: false
+      ignore_errors: true
+
+    # ================================================================
+    # REPORTE FINAL
+    # ================================================================
+    - name: "Generar reporte de estado"
+      debug:
+        msg:
+          - "=== Reporte de mantenimiento: {{ inventory_hostname }} ==="
+          - "Fecha: {{ fecha_hoy }}"
+          - "IPA: {{ ipa_ping.stdout | default('ERROR') }}"
+          - "SSSD: {{ sssd_status.stdout | default('ERROR') }}"
+          - "GLPI Agent: {{ glpi_status.status.ActiveState | default('desconocido') }}"
+          - "UFW: {{ ufw_status.stdout_lines[0] | default('desconocido') }}"
+          - "Actualización APT: {{ 'Cambios aplicados' if apt_result.changed else 'Sin cambios' }}"
+
+    - name: "Registrar fin de mantenimiento"
+      lineinfile:
+        path: "{{ mantenimiento_log }}"
+        line: "[{{ fecha_hoy }}] Fin mantenimiento OK en {{ inventory_hostname }}"
+        create: true
+        mode: '0640'
+
+    # ================================================================
+    # REINICIO SI ES NECESARIO (sólo si hay kernel nuevo)
+    # ================================================================
+    - name: "Comprobar si se necesita reinicio"
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: "Notificar que se necesita reinicio"
+      debug:
+        msg: "⚠️ El equipo {{ inventory_hostname }} necesita reiniciarse (kernel actualizado)"
+      when: reboot_required.stat.exists
+
+    - name: "Reiniciar si es necesario (SÓLO FUERA DE HORARIO ESCOLAR)"
+      reboot:
+        msg: "Reinicio por mantenimiento Ansible"
+        pre_reboot_delay: 60
+        post_reboot_delay: 60
+        test_command: uptime
+      when:
+        - reboot_required.stat.exists
+        - ansible_date_time.hour | int >= 20 or ansible_date_time.hour | int <= 6

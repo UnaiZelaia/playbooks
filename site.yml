@@ -1,0 +1,60 @@
+---
+# =============================================================
+# SITE.YML - Playbook principal
+# Arriagakoharitza Ikastetxea
+#
+# Uso:
+#   ansible-playbook -i inventory/hosts.ini site.yml
+#   ansible-playbook -i inventory/hosts.ini site.yml --tags "software"
+#   ansible-playbook -i inventory/hosts.ini site.yml --limit profesores
+# =============================================================
+
+# --- 1. Configuración base del sistema ---
+- name: "01 · Configuración base del sistema"
+  import_playbook: playbooks/01_base_setup.yml
+  tags: [base, siempre]
+
+# --- 2. Unión al dominio FreeIPA ---
+- name: "02 · Inscripción en dominio FreeIPA"
+  import_playbook: playbooks/02_freeipa_client.yml
+  tags: [ipa, dominio, identidad]
+
+# --- 3. Instalación de software educativo ---
+- name: "03 · Instalación de software"
+  import_playbook: playbooks/03_software_install.yml
+  tags: [software, paquetes]
+
+# --- 4. Configuración de Firefox ---
+- name: "04 · Personalización de Firefox"
+  import_playbook: playbooks/04_firefox_config.yml
+  tags: [firefox, navegador, software]
+
+# --- 5. Configuración de impresoras (CUPS) ---
+- name: "05 · Configuración de impresoras CUPS"
+  import_playbook: playbooks/05_cups_client.yml
+  tags: [cups, impresoras]
+
+# --- 6. Agente GLPI (inventario y tickets) ---
+- name: "06 · Instalación agente GLPI"
+  import_playbook: playbooks/06_glpi_agent.yml
+  tags: [glpi, inventario]
+
+# --- 7. Seguridad y bastionado ---
+- name: "07 · Seguridad del sistema"
+  import_playbook: playbooks/07_security.yml
+  tags: [seguridad, hardening]
+
+# --- 8. Escritorio Cinnamon por perfil ---
+- name: "08 · Configuración escritorio Cinnamon"
+  import_playbook: playbooks/08_desktop_config.yml
+  tags: [escritorio, cinnamon, desktop]
+
+# --- 9. Recursos de red (NFS) ---
+- name: "09 · Montaje de recursos de red"
+  import_playbook: playbooks/09_network_shares.yml
+  tags: [red, nfs, shares]
+
+# --- 10. Mantenimiento y actualizaciones ---
+- name: "10 · Mantenimiento del sistema"
+  import_playbook: playbooks/10_maintenance.yml
+  tags: [mantenimiento, updates, nunca]

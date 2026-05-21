@@ -1,0 +1,36 @@
+# =============================================================
+# Variables específicas para ADMINISTRACIÓN
+# =============================================================
+
+perfil_usuario: "administracion"
+
+paquetes_extra:
+  - thunderbird
+  - thunderbird-locale-eu
+  - thunderbird-locale-es
+  - nextcloud-desktop
+  - libreoffice-base        # Bases de datos
+  - gnucash                 # Gestión económica
+  - pdfarranger             # Gestión de PDFs
+  - cups-pdf                # Imprimir a PDF
+
+# Acceso completo a impresoras
+cups_grupos_acceso:
+  - "todas-impresoras"
+  - "admin-impresoras"
+
+bloqueo_pantalla_minutos: 10
+
+# Carpetas de red (incluyendo admin)
+shares_nfs:
+  - nombre: "Administración"
+    origen: "nas.arriagakoharitza.net:/exports/administracion"
+    destino: "/mnt/recursos/administracion"
+  - nombre: "Compartido"
+    origen: "nas.arriagakoharitza.net:/exports/compartido"
+    destino: "/mnt/recursos/compartido"
+
+# Sudo limitado para gestión de impresoras y GLPI
+sudo_comandos_extra:
+  - "/usr/bin/lpstat"
+  - "/usr/sbin/lpc"

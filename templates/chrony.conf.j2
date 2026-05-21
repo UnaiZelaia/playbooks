@@ -1,0 +1,25 @@
+# /etc/chrony/chrony.conf
+# Gestionado por Ansible - Arriagakoharitza Ikastetxea
+
+# Servidor NTP primario: FreeIPA del centro
+{% for server in ntp_servers %}
+server {{ server }} iburst prefer
+{% endfor %}
+
+# Pool de respaldo
+pool 2.debian.pool.ntp.org iburst
+
+# Fichero de deriva
+driftfile /var/lib/chrony/chrony.drift
+
+# Activar log
+logdir /var/log/chrony
+
+# Tamaño máximo del salto de tiempo en el arranque
+makestep 1 3
+
+# Habilitar RTC
+rtcsync
+
+# Sólo permitir consultas desde localhost (cliente puro)
+allow 127.0.0.1

@@ -1,0 +1,100 @@
+---
+# =============================================================
+# PLAYBOOK EXTRA · Modo Examen (bloqueo de aulas durante examen)
+# Uso:
+#   Activar:   ansible-playbook playbooks/11_aula_modo_examen.yml -e "aula=aula101 activar=true"
+#   Desactivar: ansible-playbook playbooks/11_aula_modo_examen.yml -e "aula=aula101 activar=false"
+# =============================================================
+- name: "Modo Examen - Control de acceso en aulas"
+  hosts: "{{ aula | default('alumnos') }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    activar: true   # true = activar modo examen, false = restaurar
+    sitios_permitidos_examen:
+      - "{{ centro.web }}"
+      - "localhost"
+      - "127.0.0.1"
+
+  tasks:
+
+    - name: "=== ACTIVANDO MODO EXAMEN ==="
+      debug:
+        msg: "Activando modo examen en {{ inventory_hostname }}"
+      when: activar | bool
+
+    - name: "=== DESACTIVANDO MODO EXAMEN ==="
+      debug:
+        msg: "Restaurando acceso normal en {{ inventory_hostname }}"
+      when: not activar | bool
+
+    # ---- Bloquear/desbloquear internet con UFW ----
+    - name: "EXAMEN: Bloquear acceso a internet (solo LAN)"
+      ufw:
+        rule: reject
+        direction: out
+        to: "0.0.0.0/0"
+        comment: "Modo examen - bloqueo internet"
+      when: activar | bool
+
+    - name: "EXAMEN: Permitir solo red interna del centro"
+      ufw:
+        rule: allow
+        direction: out
+        to: "10.2.0.0/16"
+        comment: "Modo examen - solo red centro"
+      when: activar | bool
+
+    - name: "RESTAURAR: Eliminar reglas de modo examen"
+      ufw:
+        rule: reject
+        direction: out
+        to: "0.0.0.0/0"
+        delete: true
+      when: not activar | bool
+      ignore_errors: true
+
+    # ---- Bloquear/desbloquear aplicaciones ----
+    - name: "EXAMEN: Bloquear aplicaciones no permitidas"
+      copy:
+        dest: /etc/profile.d/modo-examen.sh
+        content: |
+          #!/bin/bash
+          # MODO EXAMEN ACTIVO - Solo aplicaciones permitidas
+          for app in vlc gimp inkscape audacity kdenlive thunderbird; do
+            alias $app='echo "Aplicación bloqueada durante el examen"'
+          done
+          export MODO_EXAMEN=1
+        mode: '0644'
+      when: activar | bool
+
+    - name: "RESTAURAR: Eliminar restricciones de aplicaciones"
+      file:
+        path: /etc/profile.d/modo-examen.sh
+        state: absent
+      when: not activar | bool
+
+    # ---- Mensaje en escritorio ----
+    - name: "EXAMEN: Crear banner de modo examen"
+      copy:
+        dest: /etc/dconf/db/ikastetxea.d/99-examen
+        content: |
+          [org/cinnamon/desktop/background]
+          picture-uri='file:///usr/share/backgrounds/arriagakoharitza/modo-examen.jpg'
+        mode: '0644'
+      when: activar | bool
+
+    - name: "RESTAURAR: Eliminar banner de examen"
+      file:
+        path: /etc/dconf/db/ikastetxea.d/99-examen
+        state: absent
+      when: not activar | bool
+
+    - name: "Actualizar dconf"
+      command: dconf update
+      changed_when: false
+
+    - name: "Estado del modo examen"
+      debug:
+        msg: "{{ '✅ MODO EXAMEN ACTIVADO' if activar | bool else '✅ MODO EXAMEN DESACTIVADO - Acceso restaurado' }}"

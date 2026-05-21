@@ -1,0 +1,289 @@
+---
+# =============================================================
+# PLAYBOOK 08 · Configuración escritorio Cinnamon
+# - Fondo de pantalla corporativo
+# - Panel y applets por perfil
+# - Aplicaciones favoritas en panel
+# - Screensaver y bloqueo de pantalla
+# - Configuración de energía
+# - Accesos directos en escritorio
+# - Restricciones por perfil (alumnos)
+# =============================================================
+- name: "Configuración escritorio Cinnamon por perfil"
+  hosts: clientes
+  become: true
+  gather_facts: true
+
+  vars:
+    dconf_db_dir: "/etc/dconf/db"
+    dconf_profile_dir: "/etc/dconf/profile"
+
+  tasks:
+
+    # ================================================================
+    # DIRECTORIO PARA FONDOS DE PANTALLA
+    # ================================================================
+    - name: "Crear directorio para wallpapers corporativos"
+      file:
+        path: "{{ wallpaper_path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: "Copiar wallpaper corporativo del centro"
+      copy:
+        src: "files/wallpapers/{{ wallpaper_default }}"
+        dest: "{{ wallpaper_path }}/{{ wallpaper_default }}"
+        owner: root
+        group: root
+        mode: '0644'
+      ignore_errors: true  # Ignorar si el archivo no existe todavía
+
+    # ================================================================
+    # DCONF: PERFIL OBLIGATORIO (system-wide)
+    # ================================================================
+    - name: "Crear directorio de perfil dconf"
+      file:
+        path: "{{ dconf_profile_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: "Crear directorio de base de datos dconf"
+    # Directorio para las configuraciones del sistema
+      file:
+        path: "{{ dconf_db_dir }}/ikastetxea.d"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: "Configurar perfil dconf del sistema"
+      copy:
+        dest: "{{ dconf_profile_dir }}/user"
+        content: |
+          user-db:user
+          system-db:ikastetxea
+        owner: root
+        group: root
+        mode: '0644'
+
+    # ================================================================
+    # DCONF: CONFIGURACIONES COMUNES (todos los perfiles)
+    # ================================================================
+    - name: "Configuración dconf común - fondo de pantalla y escritorio"
+      copy:
+        dest: "{{ dconf_db_dir }}/ikastetxea.d/00-comun"
+        content: |
+          # Gestionado por Ansible - Arriagakoharitza Ikastetxea
+
+          [org/cinnamon/desktop/background]
+          picture-uri='file://{{ wallpaper_path }}/{{ wallpaper_default }}'
+          picture-options='zoom'
+          color-shading-type='solid'
+
+          [org/cinnamon/desktop/screensaver]
+          lock-enabled=true
+          lock-delay=uint32 {{ bloqueo_pantalla_minutos | default(10) | int * 60 }}
+          idle-activation-enabled=true
+
+          [org/cinnamon/desktop/session]
+          idle-delay=uint32 {{ bloqueo_pantalla_minutos | default(10) | int * 60 }}
+
+          [org/gnome/desktop/interface]
+          clock-show-date=true
+          clock-show-seconds=false
+          clock-format='24h'
+
+          [org/cinnamon/desktop/interface]
+          clock-show-date=true
+          clock-use-24h=true
+
+          [org/nemo/desktop]
+          show-desktop-icons=true
+          computer-icon-visible=false
+          home-icon-visible=true
+          network-icon-visible=true
+          trash-icon-visible=true
+
+          [org/cinnamon]
+          workspace-count=2
+
+          [org/gnome/desktop/sound]
+          allow-volume-above-100-percent=false
+          event-sounds=true
+          input-feedback-sounds=false
+        owner: root
+        group: root
+        mode: '0644'
+
+    # ================================================================
+    # DCONF: CONFIGURACIÓN POR PERFIL - PROFESORES
+    # ================================================================
+    - name: "Configuración dconf para profesores"
+      copy:
+        dest: "{{ dconf_db_dir }}/ikastetxea.d/10-profesores"
+        content: |
+          # Configuración perfil PROFESOR
+          [org/cinnamon]
+          favorite-apps=['nemo.desktop', 'firefox.desktop', 'libreoffice-writer.desktop', 'libreoffice-calc.desktop', 'libreoffice-impress.desktop', 'thunderbird.desktop', 'org.gnome.Terminal.desktop']
+          enabled-applets=['panel1:left:0:menu@cinnamon.org:0', 'panel1:left:1:separator@cinnamon.org:1', 'panel1:left:2:launchers@cinnamon.org:2', 'panel1:left:3:window-list@cinnamon.org:3', 'panel1:right:0:systray@cinnamon.org:4', 'panel1:right:1:xrandr@cinnamon.org:5', 'panel1:right:2:keyboard@cinnamon.org:6', 'panel1:right:3:notifications@cinnamon.org:7', 'panel1:right:4:printers@cinnamon.org:8', 'panel1:right:5:sound@cinnamon.org:9', 'panel1:right:6:network@cinnamon.org:10', 'panel1:right:7:power@cinnamon.org:11', 'panel1:right:8:calendar@cinnamon.org:12']
+
+          [org/cinnamon/desktop/power]
+          sleep-inactive-ac-timeout=3600
+          sleep-inactive-battery-timeout=1800
+          button-power='suspend'
+        owner: root
+        group: root
+        mode: '0644'
+      when: perfil_usuario == 'profesor'
+
+    # ================================================================
+    # DCONF: CONFIGURACIÓN POR PERFIL - ALUMNOS (más restrictivo)
+    # ================================================================
+    - name: "Configuración dconf para alumnos"
+      copy:
+        dest: "{{ dconf_db_dir }}/ikastetxea.d/10-alumnos"
+        content: |
+          # Configuración perfil ALUMNO
+          [org/cinnamon]
+          favorite-apps=['firefox.desktop', 'libreoffice-writer.desktop', 'libreoffice-calc.desktop', 'geogebra.desktop', 'org.kde.okular.desktop', 'org.kde.krita.desktop']
+          enabled-applets=['panel1:left:0:menu@cinnamon.org:0', 'panel1:left:1:separator@cinnamon.org:1', 'panel1:left:2:window-list@cinnamon.org:2', 'panel1:right:0:systray@cinnamon.org:3', 'panel1:right:1:keyboard@cinnamon.org:4', 'panel1:right:2:sound@cinnamon.org:5', 'panel1:right:3:network@cinnamon.org:6', 'panel1:right:4:calendar@cinnamon.org:7']
+          number-workspaces=1
+
+          [org/cinnamon/desktop/power]
+          sleep-inactive-ac-timeout=900
+          sleep-inactive-battery-timeout=600
+          button-power='suspend'
+
+          [org/nemo/desktop]
+          show-desktop-icons=true
+          computer-icon-visible=false
+          home-icon-visible=true
+          network-icon-visible=false
+          trash-icon-visible=false
+        owner: root
+        group: root
+        mode: '0644'
+      when: perfil_usuario == 'alumno'
+
+    # ================================================================
+    # DCONF: LOCKS (valores bloqueados que el usuario NO puede cambiar)
+    # ================================================================
+    - name: "Crear directorio de locks dconf"
+      file:
+        path: "{{ dconf_db_dir }}/ikastetxea.d/locks"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: "Bloquear configuraciones críticas para alumnos"
+      copy:
+        dest: "{{ dconf_db_dir }}/ikastetxea.d/locks/ikastetxea-locks"
+        content: |
+          /org/cinnamon/desktop/background/picture-uri
+          /org/cinnamon/desktop/screensaver/lock-enabled
+          /org/cinnamon/desktop/session/idle-delay
+        owner: root
+        group: root
+        mode: '0644'
+      when: perfil_usuario == 'alumno'
+
+    # ================================================================
+    # ACTUALIZAR BASE DE DATOS DCONF
+    # ================================================================
+    - name: "Compilar base de datos dconf"
+      command: dconf update
+      changed_when: false
+
+    # ================================================================
+    # ACCESOS DIRECTOS EN EL ESCRITORIO (skel para nuevos usuarios)
+    # ================================================================
+    - name: "Crear acceso directo GLPI en skel"
+      copy:
+        dest: /etc/skel/Desktop/glpi-tickets.desktop
+        content: |
+          [Desktop Entry]
+          Version=1.0
+          Type=Link
+          Name=🎫 Soporte / Tickets
+          Name[eu]=🎫 Laguntza / Txartelak
+          Comment=Solicitar soporte técnico o reportar incidencias
+          URL={{ servidores.glpi.url }}
+          Icon=help-browser
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: "Crear acceso directo al cloud en skel"
+      copy:
+        dest: /etc/skel/Desktop/cloud-educacion.desktop
+        content: |
+          [Desktop Entry]
+          Version=1.0
+          Type=Link
+          Name=☁️ Cloud Educación
+          Name[eu]=☁️ Hezkuntza Hodeian
+          Comment=Cloud del Departamento de Educación
+          URL={{ centro.cloud_educacion }}
+          Icon=folder-remote
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: "Crear acceso directo a la web del centro en skel"
+      copy:
+        dest: /etc/skel/Desktop/web-centro.desktop
+        content: |
+          [Desktop Entry]
+          Version=1.0
+          Type=Link
+          Name=🏫 {{ centro.nombre }}
+          Comment=Página web del centro educativo
+          URL={{ centro.web }}
+          Icon=internet-web-browser
+        owner: root
+        group: root
+        mode: '0755'
+
+    # ================================================================
+    # CONFIGURACIÓN DE ENERGÍA
+    # ================================================================
+    - name: "Configurar opciones de energía del sistema"
+      copy:
+        dest: /etc/systemd/logind.conf
+        content: |
+          [Login]
+          # Acción al cerrar la tapa (portátiles)
+          HandleLidSwitch=suspend
+          HandleLidSwitchExternalPower=ignore
+          # Acción al pulsar el botón de apagado
+          HandlePowerKey=suspend
+          # Tiempo de inactividad antes de suspender (clientes de aula: nunca)
+          IdleAction=ignore
+          IdleActionSec=30min
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reiniciar_logind
+
+    # ================================================================
+    # TEMA VISUAL
+    # ================================================================
+    - name: "Instalar tema Mint-Y (ya incluido) y otros"
+      apt:
+        name:
+          - mint-themes
+          - mint-y-icons
+          - papirus-icon-theme
+        state: present
+      ignore_errors: true
+
+  handlers:
+    - name: reiniciar_logind
+      systemd:
+        name: systemd-logind
+        state: restarted

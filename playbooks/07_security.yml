@@ -1,0 +1,288 @@
+---
+# =============================================================
+# PLAYBOOK 07 · Seguridad y bastionado
+# - UFW firewall
+# - Fail2ban
+# - Actualizaciones de seguridad automáticas
+# - Auditoría con auditd
+# - ClamAV antivirus
+# - Políticas de contraseña (PAM)
+# - Deshabilitar servicios innecesarios
+# =============================================================
+- name: "Seguridad y bastionado del sistema"
+  hosts: clientes
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # ================================================================
+    # FIREWALL - UFW
+    # ================================================================
+    - name: "Instalar UFW"
+      apt:
+        name: ufw
+        state: present
+
+    - name: "Política por defecto: denegar entrante, permitir saliente"
+      ufw:
+        policy: "{{ item.policy }}"
+        direction: "{{ item.direction }}"
+      loop:
+        - { policy: deny,  direction: incoming }
+        - { policy: allow, direction: outgoing }
+
+    - name: "Permitir SSH desde red del centro"
+      ufw:
+        rule: allow
+        src: "10.2.0.0/16"
+        port: "22"
+        proto: tcp
+        comment: "SSH desde red interna del centro"
+
+    - name: "Permitir tráfico CUPS desde servidor"
+      ufw:
+        rule: allow
+        src: "{{ servidores.cups.ip }}"
+        port: "631"
+        proto: tcp
+        comment: "CUPS servidor del centro"
+
+    - name: "Permitir agente GLPI"
+      ufw:
+        rule: allow
+        src: "{{ servidores.glpi.ip }}"
+        port: "62354"
+        proto: tcp
+        comment: "GLPI Agent webservice"
+
+    - name: "Permitir Kerberos/IPA"
+      ufw:
+        rule: allow
+        src: "{{ servidores.ipa.ip }}"
+        comment: "FreeIPA - todo el tráfico"
+
+    - name: "Habilitar UFW"
+      ufw:
+        state: enabled
+        logging: "low"
+
+    # ================================================================
+    # FAIL2BAN
+    # ================================================================
+    - name: "Instalar fail2ban"
+      apt:
+        name: fail2ban
+        state: present
+
+    - name: "Configurar fail2ban - jail local"
+      copy:
+        dest: /etc/fail2ban/jail.local
+        content: |
+          [DEFAULT]
+          bantime  = 3600
+          findtime = 600
+          maxretry = 5
+          backend  = systemd
+          ignoreip = 127.0.0.1/8 ::1 10.2.0.0/16
+
+          [sshd]
+          enabled = true
+          port    = ssh
+          logpath = %(sshd_log)s
+          backend = %(sshd_backend)s
+          maxretry = 3
+          bantime  = 7200
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reiniciar_fail2ban
+
+    - name: "Habilitar y arrancar fail2ban"
+      systemd:
+        name: fail2ban
+        enabled: true
+        state: started
+
+    # ================================================================
+    # ACTUALIZACIONES DE SEGURIDAD AUTOMÁTICAS
+    # ================================================================
+    - name: "Instalar unattended-upgrades"
+      apt:
+        name:
+          - unattended-upgrades
+          - apt-listchanges
+        state: present
+
+    - name: "Configurar unattended-upgrades"
+      copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+            "${distro_id}:${distro_codename}";
+            "${distro_id}:${distro_codename}-security";
+            "${distro_id}ESMApps:${distro_codename}-apps-security";
+            "${distro_id}ESM:${distro_codename}-infra-security";
+          };
+          Unattended-Upgrade::Package-Blacklist {
+            // No actualizar automáticamente estos paquetes críticos
+            "freeipa-client";
+            "sssd";
+            "lightdm";
+          };
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::MinimalSteps "true";
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+          Unattended-Upgrade::Automatic-Reboot "false";
+          Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+          Unattended-Upgrade::Mail "{{ centro.soporte_email }}";
+          Unattended-Upgrade::MailReport "on-change";
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Activar ejecución periódica de unattended-upgrades"
+      copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Download-Upgradeable-Packages "1";
+          APT::Periodic::AutocleanInterval "7";
+          APT::Periodic::Unattended-Upgrade "1";
+        owner: root
+        group: root
+        mode: '0644'
+
+    # ================================================================
+    # ANTIVIRUS - ClamAV
+    # ================================================================
+    - name: "Instalar ClamAV"
+      apt:
+        name:
+          - clamav
+          - clamav-daemon
+          - clamav-freshclam
+        state: present
+
+    - name: "Actualizar firmas de ClamAV"
+      command: freshclam
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Habilitar ClamAV daemon"
+      systemd:
+        name: clamav-daemon
+        enabled: true
+        state: started
+
+    - name: "Programar escaneo semanal con ClamAV"
+      cron:
+        name: "ClamAV escaneo semanal"
+        weekday: "0"
+        hour: "2"
+        minute: "0"
+        job: "clamscan -r /home --quiet --log=/var/log/clamav/scan-$(date +\\%Y\\%m\\%d).log"
+        user: root
+
+    # ================================================================
+    # AUDITORÍA - auditd
+    # ================================================================
+    - name: "Instalar auditd"
+      apt:
+        name:
+          - auditd
+          - audispd-plugins
+        state: present
+
+    - name: "Configurar reglas de auditoría básicas"
+      copy:
+        dest: /etc/audit/rules.d/ikastetxea.rules
+        content: |
+          # Reglas de auditoría - Arriagakoharitza Ikastetxea
+          # Gestionado por Ansible
+
+          # Monitorizar accesos a archivos sensibles
+          -w /etc/passwd -p wa -k usuario_modificado
+          -w /etc/shadow -p wa -k shadow_modificado
+          -w /etc/sudoers -p wa -k sudoers_modificado
+          -w /etc/ssh/sshd_config -p wa -k ssh_config_modificado
+
+          # Monitorizar uso de sudo
+          -w /usr/bin/sudo -p x -k uso_sudo
+
+          # Monitorizar cambios en configuración IPA/SSSD
+          -w /etc/sssd/ -p wa -k sssd_config
+          -w /etc/ipa/ -p wa -k ipa_config
+
+          # Acceso a dispositivos USB
+          -a always,exit -F arch=b64 -S mount -k montaje_usb
+          -a always,exit -F arch=b32 -S mount -k montaje_usb
+
+          # Llamadas a ejecutables sospechosas
+          -a always,exit -F arch=b64 -S execve -F euid=0 -k exec_root
+        owner: root
+        group: root
+        mode: '0640'
+      notify: reiniciar_auditd
+
+    - name: "Habilitar auditd"
+      systemd:
+        name: auditd
+        enabled: true
+        state: started
+
+    # ================================================================
+    # DESHABILITAR SERVICIOS INNECESARIOS
+    # ================================================================
+    - name: "Deshabilitar servicios innecesarios en clientes"
+      systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop:
+        - bluetooth
+        - avahi-daemon
+        - cups-browsed
+      ignore_errors: true
+
+    # ================================================================
+    # SSH - Bastionado adicional
+    # ================================================================
+    - name: "Bastionar configuración SSH"
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        backup: true
+      loop:
+        - regexp: '^#?PermitEmptyPasswords'
+          line: 'PermitEmptyPasswords no'
+        - regexp: '^#?X11Forwarding'
+          line: 'X11Forwarding no'
+        - regexp: '^#?MaxAuthTries'
+          line: 'MaxAuthTries 3'
+        - regexp: '^#?LoginGraceTime'
+          line: 'LoginGraceTime 30'
+        - regexp: '^#?ClientAliveInterval'
+          line: 'ClientAliveInterval 300'
+        - regexp: '^#?ClientAliveCountMax'
+          line: 'ClientAliveCountMax 2'
+        - regexp: '^#?AllowGroups'
+          line: "AllowGroups sudo ansible_admin {{ grupo_admin_local }}"
+      notify: reiniciar_ssh
+
+  handlers:
+    - name: reiniciar_fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted
+
+    - name: reiniciar_auditd
+      systemd:
+        name: auditd
+        state: restarted
+
+    - name: reiniciar_ssh
+      systemd:
+        name: ssh
+        state: restarted
