@@ -12,6 +12,9 @@
   gather_facts: true
   vars_files:
     - ../inventory/group_vars/all.yml
+  collections:                    # ← añadir esto
+    - community.general
+    - ansible.posix
 
   vars:
     glpi_agent_deb: "glpi-agent_{{ glpi_agent.version }}_all.deb"

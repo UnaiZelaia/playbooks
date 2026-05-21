@@ -11,6 +11,9 @@
   gather_facts: false
   vars_files:
     - ../inventory/group_vars/all.yml
+  collections:                    # ← añadir esto
+    - community.general
+    - ansible.posix
 
   vars:
     activar: true   # true = activar modo examen, false = restaurar

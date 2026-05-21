@@ -13,6 +13,9 @@
   gather_facts: true
   vars_files:
     - ../inventory/group_vars/all.yml
+  collections:                    # ← añadir esto
+    - community.general
+    - ansible.posix
 
   vars:
     firefox_policies_dir: "/usr/lib/firefox/distribution"

@@ -13,6 +13,9 @@
   gather_facts: true
   vars_files:
     - ../inventory/group_vars/all.yml
+  collections:                    # ← añadir esto
+    - community.general
+    - ansible.posix
 
   vars:
     # Credenciales de enrollment - mejor usar ansible-vault

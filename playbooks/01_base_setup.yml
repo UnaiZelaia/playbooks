@@ -11,6 +11,9 @@
   gather_facts: true
   vars_files:
     - ../inventory/group_vars/all.yml
+  collections:                    # ← añadir esto
+    - community.general
+    - ansible.posix
 
   tasks:
 
@@ -27,6 +30,11 @@
         autoclean: true
       register: apt_upgrade
       notify: reiniciar_si_kernel
+
+    # ---- Zona horaria ----
+    - name: "Configurar zona horaria"
+      timezone:
+        name: "{{ timezone }}"
 
     # ---- Locale ----
     - name: "Instalar soporte de locales"
